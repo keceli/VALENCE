@@ -1494,6 +1494,8 @@ def get_args():
                         help='Run modelkit to adjust weights of guess orbitals')
     parser.add_argument('-R', '--runvalence', action='store_true',
                         help='Run VALENCE calculation')
+    parser.add_argument('-X', '--writexyz', action='store_true',
+                        help='Write xyz file')
     parser.add_argument('-W', '--write', action='store_true',
                         help='Write files')
     return parser.parse_args()
@@ -1504,6 +1506,7 @@ def main():
     args = get_args()
     parameters = vars(args)
     mol = parameters['input']
+    mol = ob.get_xyz(mol)
     basis = parameters['basis']
     opt = parameters['opt']
     prefix = parameters['filename']
@@ -1514,6 +1517,12 @@ def main():
     guess      = None
     mkinput    = None
 
+    if prefix == '':
+        prefix = ob.get_formula(mol)
+    if parameters['writexyz']:
+        xyzfile = io.get_unique_filename(prefix + '.xyz')
+        print('Writing xyz file {}'.format(xyzfile))
+        io.write_file(mol,xyzfile)
     if generateguess:
         if parameters['orbitals']:
             orbitalsfile = parameters['orbitals']
@@ -1534,8 +1543,6 @@ def main():
         print('EMSL Basis Set Exchange library not available')
         print('You need to provide basis set function files, i.e. *.basis, or within vtools directory run "git clone https://github.com/jaimergp/ebsel.git"')
 
-    if prefix == '':
-        prefix = ob.get_formula(mol)
     if modelkit:
         mkinput = get_modelkit_input(mol, basis)
         if parameters['write']:
