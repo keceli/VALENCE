@@ -243,6 +243,29 @@ def read_guess_orbital(filename,checkmaxorbital=0):
     return gwfn, nweight
 
 
+def parse_guess_orbital(filename):
+    """
+    Parameters:
+    -----------
+    filename: str
+    checkmaxorbital: int, enter the max orbital number to check validity of guess wfn
+    Returns:
+    --------
+    gwfn: str
+    norbital: int
+    """
+    with open(filename, 'r') as f:
+        gwfn = f.read().strip()
+    nweight = len(gwfn.split()) // 2
+    if checkmaxorbital:
+        for i,tmp in enumerate(gwfn.split()):
+            if i % 2 == 0:
+                orb = int(tmp)
+                if orb > checkmaxorbital:
+                    print("{} has an orbital ({}) larger than given max orbital {}".format(filename,orb,checkmaxorbital))
+    return gwfn, nweight
+
+
 def get_bonding_table(mol):
     """
     Parameters:
@@ -371,6 +394,181 @@ def get_core_guess(mol, datadir='', nbfdict=None, fullbasis=False):
                 print("Error in get_core_guess, {} not found and nbfdict not provided".format(guessfilename))
             guess += '1    {} {}\n{}\n'.format(i+1,nweight,orb)
     return guess
+
+
+def get_core_guess_namespace(mol, basis):
+    """
+    Return a namespace with the following attributes for core guess orbitals
+    input: str, core guess orbitals in VALENCE input format
+    ncoefficients: int, total number of coefficients
+    norbital: int,  total number of core orbitals
+    """
+    from argparse import Namespace
+    import obtools as ob
+    import iotools as io
+#    from vtools import get_electrons_list, get_guess_filename
+    guess = Namespace
+    mol   = ob.get_mol(mol,make3D=True)
+    natom = len(mol.atoms)
+    guess.input = ''
+    guess.ncoefficient = 0
+    coefficients = []
+    indices= []
+    guess.mol = mol
+    guess.basis = basis
+    guess.norbital = 0
+    guess.type = 'core'
+    elists = get_electrons_list(mol)
+    for i in range(natom):
+        atomi = mol.OBMol.GetAtomById(i)
+        zi = atomi.GetAtomicNum()
+        natomorbital = int(elists[i][1]/2)
+        for orbtype in range(1, natomorbital+1):
+            guessfilename = get_guess_filename([zi], bondorder=0, orbtype=orbtype)
+            guessfilename = io.join_path(*[basis,guessfilename])
+            if io.check_file(guessfilename):
+                newguess = get_guess_namespace(guessfilename)
+                coefficients.append(newguess.coefficients)
+                indices.append(newguess.indices)
+            else:
+                print("Error in reading guess file {}".format(guessfilename))
+                raise SystemExit
+            guess.input += '1    {} {}\n'.format(i+1,newguess.ncoefficient)
+            for idx in range(newguess.ncoefficient):
+                guess.input += '{} {}\n'.format(newguess.indices[idx],newguess.coefficients[idx])
+            guess.norbital += 1
+            guess.ncoefficient += newguess.ncoefficient
+    guess.coefficients = coefficients
+    guess.indices = indices
+    return guess
+
+
+def get_guess_namespace(guessfile):
+    """
+    Return a namespace for guess orbitals as parsed from guessfile
+    """
+    from argparse import Namespace
+    guess = Namespace
+    with open(guessfile, 'r') as f:
+        txt = f.read().strip()
+    items = txt.split()
+    ncoef = len(items) // 2
+    guess.coefficients = [0]*ncoef
+    guess.indices = [0]*ncoef
+    for i in range(ncoef):
+        guess.indices[i] = int(items[2*i])
+        guess.coefficients[i] = float(items[2*i+1])
+    guess.filename = guessfile
+    guess.ncoefficient = ncoef
+    return guess
+
+
+def get_valence_basis_namespace(basis):
+    """
+    Returns a namespace with the information parsed from the VALENCE basis input
+    for a single element.
+    Parameters:
+    -----------
+    basis: str
+    Returns:
+    --------
+    A namespace with the following attributes
+    out.charge: nuclear/point charge
+    out.nprimitive: int, total number of primitive functions
+    out.nprimitives = list of int, list of number of primitives for each shell
+    out.nshell = int, number of shells
+    out.shells = list of str, list of shell names ('S','P',etc)
+    out.angular_momentums = list of int, list of ang. mom.
+    out.exponents = list of float, list of exponent values
+    out.coefficients = list of float, list of coefficients
+    out.nfunctions = list of int, list of number of functions for each shell
+    out.functions = list of str, list of function names, i.e. ('s','px',etc)
+
+    Sample VALENCE basis input:
+    6.0   5
+    0   6
+          3047.5249000              0.0018347
+           457.3695100              0.0140373
+           103.9486900              0.0688426
+            29.2101550              0.2321844
+             9.2866630              0.4679413
+             3.1639270              0.3623120
+    0   3
+             7.8682724             -0.1193324
+             1.8812885             -0.1608542
+             0.5442493              1.1434564
+    1   3
+             7.8682724              0.0689991
+             1.8812885              0.3164240
+             0.5442493              0.7443083
+    0   1
+             0.1687144
+    1   1
+             0.1687144
+
+    """
+    from argparse import Namespace
+    out = Namespace
+    shells = ['S', 'P', 'D', 'F', 'G']
+    nfunc  = [1,    3,   6,   10,  15]
+    lines = basis.splitlines()
+    out.nprimitive = 0
+    linenumber = 0
+    try:
+        line = lines[linenumber]
+        items = line.split()
+        out.charge = float(items[0])
+        out.nshell = int(items[1])
+        linenumber = 1
+    except:
+        print('Error in parsing the basis  line {}'.format(line))
+        return None
+    out.shells = [0]*nshell
+    out.angular_momentums = [0]*nshell
+    out.nprimitives = [0]*nshell
+    out.exponents = [0]*nshell
+    out.coefficients = [0]*nshell
+    out.nfunctions = [0]*nshell
+    out.functions = []
+    for shell in range(nshell):
+        items = lines[linenumber].split()
+        angular_momentum = int(items[0])
+        if angular_momentum == 0:
+            out.functions.append('s')
+        elif angular_momentum == 1:
+            out.functions.append('px')
+            out.functions.append('py')
+            out.functions.append('pz')
+        elif angular_momentum == 2:
+            out.functions.append('dxx')
+            out.functions.append('dyy')
+            out.functions.append('dzz')
+            out.functions.append('dxy')
+            out.functions.append('dxz')
+            out.functions.append('dyz')
+        nprimitive = int(items[1])
+        out.angular_momentums[shell] = angular_momentum
+        out.nprimitives[shell] = nprimitive
+        out.shells[shell] = shells[angular_momentum]
+        out.nfunctions[shell] = nfunc[angular_momentum]
+        exponents = [0.]*nprimitive
+        coefficients = [1.]*nprimitive
+        linenumber += 1
+        for p in range(nprimitive):
+            line = lines[linenumber]
+            items = line.split()
+            if len(items) == 2:
+                exponents[p] = float(items[0])
+                coefficients[p] = float(items[1])
+            elif len(items) == 1:
+                exponents[p] = float(items[0])
+            else:
+                print('Cannot parse basis line {}'.format(line))
+            linenumber += 1
+        out.exponents[shell] = exponents
+        out.coefficients[shell] = coefficients
+    out.nprimitive = sum(out.nprimitives)
+    return out
 
 
 def get_modelkit_input(mol,basis=''):
