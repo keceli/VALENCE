@@ -2,6 +2,7 @@ name: valence-env
 
 channels:
   - openbabel
+  - modelkit
 dependencies:
   - python=2.7
   - numpy
@@ -9,7 +10,8 @@ dependencies:
   - openbabel
   - jupyter
   - nb_conda
-  - ipykernel 
+  - ipykernel
+  - modelkit 
   - pip:
     - py3Dmol
     - "--editable=git+https://github.com/jaimergp/ebsel.git#egg=ebsel"
